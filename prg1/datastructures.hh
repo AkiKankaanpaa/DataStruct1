@@ -9,6 +9,10 @@
 #include <utility>
 #include <limits>
 #include <functional>
+#include <unordered_map>
+#include <map>
+#include <memory>
+#include <math.h>
 
 // Types for IDs
 using PlaceID = long int;
@@ -39,10 +43,29 @@ struct Coord
     int y = NO_VALUE;
 };
 
-// Example: Defining == and hash function for Coord so that it can be used
-// as key for std::unordered_map/set, if needed
+struct Place {
+    Place(PlaceID id, Name name, PlaceType type, Coord coordinates):
+        id(id), name(name), type(type), coordinates(coordinates)
+
+    {}
+    PlaceID id;
+    Name name;
+    PlaceType type;
+    Coord coordinates;
+};
+
+double calculate_euclidean(Coord coord);
+
 inline bool operator==(Coord c1, Coord c2) { return c1.x == c2.x && c1.y == c2.y; }
-inline bool operator!=(Coord c1, Coord c2) { return !(c1==c2); } // Not strictly necessary
+inline bool operator!=(Coord c1, Coord c2) { return !(c1==c2); }
+inline bool operator<(Coord c1, Coord c2)
+{
+    double c1_e = calculate_euclidean(c1);
+    double c2_e = calculate_euclidean(c2);
+    if (c1_e < c2_e) { return true; }
+    else if (c1_e > c2_e) { return false; }
+    else { return c1.y < c2.y; }
+}
 
 struct CoordHash
 {
@@ -55,15 +78,6 @@ struct CoordHash
         return xhash ^ (yhash + 0x9e3779b9 + (xhash << 6) + (xhash >> 2));
     }
 };
-
-// Example: Defining < for Coord so that it can be used
-// as key for std::map/set
-inline bool operator<(Coord c1, Coord c2)
-{
-    if (c1.y < c2.y) { return true; }
-    else if (c2.y < c1.y) { return false; }
-    else { return c1.x < c2.x; }
-}
 
 // Return value for cases where coordinates were not found
 Coord const NO_COORD = {NO_VALUE, NO_VALUE};
@@ -183,8 +197,17 @@ public:
     AreaID common_area_of_subareas(AreaID id1, AreaID id2);
 
 private:
-    // Add stuff needed for your class implementation here
+    bool coordinate_sorted_;
+    bool alphabetical_sorted_;
 
+    std::vector<PlaceID> alphabetical_vector_ids_;
+    std::vector<PlaceID> coordinate_vector_ids_;
+
+    std::unordered_map<PlaceID, std::shared_ptr<Place>> places_by_id_;
+    std::unordered_multimap<Name, std::shared_ptr<Place>> places_by_name_;
+    std::unordered_multimap<PlaceType, std::shared_ptr<Place>> places_by_type_;
+
+    std::shared_ptr<Place> get_place(PlaceID id);
 };
 
 #endif // DATASTRUCTURES_HH
