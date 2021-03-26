@@ -60,15 +60,17 @@ std::vector<PlaceID> Datastructures::all_places()
 
 bool Datastructures::add_place(PlaceID id, const Name& name, PlaceType type, Coord xy)
 {
-    auto search_by_id = places_by_id_.find(id);
-
-    if (search_by_id != places_by_id_.end()) {
+    auto found_place = get_place(id);
+    // Making sure that no place already exists with the same PlaceID
+    if (found_place != nullptr) {
         return false;
     }
     auto added_place = std::make_shared<Place>(id, name, type, xy);
 
     places_by_id_.insert({id, added_place});
     places_by_name_.insert({name, added_place});
+    places_by_type_.insert({type, added_place});
+
     coordinate_sorted_ = false;
     alphabetical_sorted_ = false;
     return true;
@@ -94,20 +96,32 @@ Coord Datastructures::get_place_coord(PlaceID id)
 
 bool Datastructures::add_area(AreaID id, const Name &name, std::vector<Coord> coords)
 {
-    // Replace this comment with your implementation
-    return false;
+    auto found_area = get_area(id);
+    // Making sure that no area already exists with the same AreaID
+    if (found_area != nullptr) {
+        return false;
+    }
+    auto added_area = std::make_shared<Area>(id, name, coords);
+    areas_by_id_.insert({id, added_area});
+    return true;
 }
 
 Name Datastructures::get_area_name(AreaID id)
 {
-    // Replace this comment with your implementation
-    return NO_NAME;
+    std::shared_ptr<Area> wanted_area = get_area(id);
+    if (wanted_area == nullptr) {
+        return NO_NAME;
+    }
+    return wanted_area->name;
 }
 
 std::vector<Coord> Datastructures::get_area_coords(AreaID id)
 {
-    // Replace this comment with your implementation
-    return {NO_COORD};
+    std::shared_ptr<Area> wanted_area = get_area(id);
+    if (wanted_area == nullptr) {
+        return {NO_COORD};
+    }
+    return wanted_area->coordinates;
 }
 
 void Datastructures::creation_finished()
@@ -172,32 +186,75 @@ std::vector<PlaceID> Datastructures::find_places_type(PlaceType type)
 
 bool Datastructures::change_place_name(PlaceID id, const Name& newname)
 {
-    // Replace this comment with your implementation
-    return false;
+    auto found_place = get_place(id);
+    if (found_place == nullptr) {
+        return false;
+    }
+
+    Name old_name = found_place->name;
+    auto id_iterator_pair = places_by_name_.equal_range(old_name);
+    found_place->name = newname;
+
+    for (auto it = id_iterator_pair.first; it != id_iterator_pair.second; ++it) {
+        if (it->second->id == id) {
+            auto wanted_element = places_by_name_.extract(it);
+            wanted_element.key() = newname;
+            places_by_name_.insert(std::move(wanted_element));
+        }
+    }
+    alphabetical_sorted_ = false;
+    return true;
 }
 
 bool Datastructures::change_place_coord(PlaceID id, Coord newcoord)
 {
-    // Replace this comment with your implementation
-    return false;
+    auto found_value = places_by_id_.find(id);
+    if (found_value == places_by_id_.end()) {
+        return false;
+    }
+    found_value->second->coordinates = newcoord;
+    return true;
 }
 
 std::vector<AreaID> Datastructures::all_areas()
 {
-    // Replace this comment with your implementation
-    return {};
+    std::vector<AreaID> area_vector = {};
+    for (auto it = areas_by_id_.begin(); it != areas_by_id_.end(); it++) {
+        area_vector.push_back(it->first);
+    }
+    return area_vector;
 }
 
 bool Datastructures::add_subarea_to_area(AreaID id, AreaID parentid)
 {
-    // Replace this comment with your implementation
-    return false;
+    auto found_subarea = areas_by_id_.find(id);
+    auto found_parent_area = areas_by_id_.find(parentid);
+    auto end_of_areas = areas_by_id_.end();
+    if (found_subarea == end_of_areas || found_parent_area == end_of_areas) {
+        return false;
+    }
+    if (found_subarea->second->parent_area != nullptr) {
+        return false;
+    }
+
+    found_subarea->second->parent_area = found_parent_area->second;
+    found_parent_area->second->subareas.push_back(found_subarea->second);
+    return true;
 }
 
 std::vector<AreaID> Datastructures::subarea_in_areas(AreaID id)
 {
-    // Replace this comment with your implementation
-    return {NO_AREA};
+    auto found_area = get_area(id);
+    if (found_area == nullptr) {
+        return {NO_AREA};
+    }
+
+    std::vector<AreaID> higher_areas = {};
+    while (found_area->parent_area != nullptr) {
+        found_area = found_area->parent_area;
+        higher_areas.push_back(found_area->id);
+    }
+    return higher_areas;
 }
 
 std::vector<PlaceID> Datastructures::places_closest_to(Coord xy, PlaceType type)
@@ -227,6 +284,15 @@ AreaID Datastructures::common_area_of_subareas(AreaID id1, AreaID id2)
 std::shared_ptr<Place> Datastructures::get_place(PlaceID id) {
     auto search_by_id = places_by_id_.find(id);
     if (search_by_id == places_by_id_.end()) {
+        return nullptr;
+    }
+    return search_by_id->second;
+}
+
+std::shared_ptr<Area> Datastructures::get_area(PlaceID id)
+{
+    auto search_by_id = areas_by_id_.find(id);
+    if (search_by_id == areas_by_id_.end()) {
         return nullptr;
     }
     return search_by_id->second;

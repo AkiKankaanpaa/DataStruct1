@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <math.h>
+#include <QDebug>
 
 // Types for IDs
 using PlaceID = long int;
@@ -44,7 +45,7 @@ struct Coord
 };
 
 struct Place {
-    Place(PlaceID id, Name name, PlaceType type, Coord coordinates):
+    Place(PlaceID id, Name const& name, PlaceType type, Coord coordinates):
         id(id), name(name), type(type), coordinates(coordinates)
 
     {}
@@ -52,6 +53,17 @@ struct Place {
     Name name;
     PlaceType type;
     Coord coordinates;
+};
+
+struct Area {
+    Area(AreaID id, Name const& name, std::vector<Coord> coordinates):
+        id(id), name(name), coordinates(coordinates), parent_area(nullptr), subareas({})
+    {}
+    AreaID id;
+    Name name;
+    std::vector<Coord> coordinates;
+    std::shared_ptr<Area> parent_area;
+    std::vector<std::weak_ptr<Area>> subareas;
 };
 
 double calculate_euclidean(Coord coord);
@@ -207,7 +219,10 @@ private:
     std::unordered_multimap<Name, std::shared_ptr<Place>> places_by_name_;
     std::unordered_multimap<PlaceType, std::shared_ptr<Place>> places_by_type_;
 
+    std::unordered_map<AreaID, std::shared_ptr<Area>> areas_by_id_;
+
     std::shared_ptr<Place> get_place(PlaceID id);
+    std::shared_ptr<Area> get_area(PlaceID id);
 };
 
 #endif // DATASTRUCTURES_HH
