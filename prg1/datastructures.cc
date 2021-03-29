@@ -47,6 +47,11 @@ int Datastructures::place_count()
 void Datastructures::clear_all()
 {
     places_by_id_.clear();
+    places_by_name_.clear();
+    places_by_type_.clear();
+    areas_by_id_.clear();
+    alphabetical_sorted_ = false;
+    coordinate_sorted_ = false;
 }
 
 std::vector<PlaceID> Datastructures::all_places()
@@ -126,9 +131,7 @@ std::vector<Coord> Datastructures::get_area_coords(AreaID id)
 
 void Datastructures::creation_finished()
 {
-    // Replace this comment with your implementation
-    // NOTE!! It's quite ok to leave this empty, if you don't need operations
-    // that are performed after all additions have been done.
+    // Currently this has no purpose
 }
 
 
@@ -213,6 +216,7 @@ bool Datastructures::change_place_coord(PlaceID id, Coord newcoord)
         return false;
     }
     found_value->second->coordinates = newcoord;
+    coordinate_sorted_ = false;
     return true;
 }
 
@@ -259,26 +263,123 @@ std::vector<AreaID> Datastructures::subarea_in_areas(AreaID id)
 
 std::vector<PlaceID> Datastructures::places_closest_to(Coord xy, PlaceType type)
 {
-    // Replace this comment with your implementation
-    return {};
+    std::unordered_multimap<PlaceType, std::shared_ptr<Place>>::iterator beginning;
+    std::unordered_multimap<PlaceType, std::shared_ptr<Place>>::iterator ending;
+
+    if(type == PlaceType::NO_TYPE){
+        beginning = places_by_type_.begin();
+        ending = places_by_type_.end();
+    } else {
+        auto it_range = places_by_type_.equal_range(type);
+        beginning = it_range.first;
+        ending = it_range.second;
+    }
+
+    std::pair<double, std::shared_ptr<Place>> first_closest = {NO_DISTANCE, nullptr};
+    std::pair<double, std::shared_ptr<Place>> second_closest = {NO_DISTANCE, nullptr};
+    std::pair<double, std::shared_ptr<Place>> third_closest = {NO_DISTANCE, nullptr};
+
+    for(auto it = beginning; it != ending; it++){
+        double distance = calculate_euclidean({xy.x - it->second->coordinates.x, xy.y - it->second->coordinates.y});
+        if (first_closest.second == nullptr){
+            first_closest = {distance, it->second};
+        } else if(distance < first_closest.first || (distance == first_closest.first && first_closest.second->coordinates.y > it->second->coordinates.y)){
+            third_closest = second_closest;
+            second_closest = first_closest;
+            first_closest = {distance, it->second};
+        } else if (second_closest.second == nullptr){
+            second_closest = {distance, it->second};
+        } else if (distance < second_closest.first || (distance == second_closest.first && second_closest.second->coordinates.y > it->second->coordinates.y)){
+            third_closest = second_closest;
+            second_closest = {distance, it->second};
+        } else if (third_closest.second == nullptr){
+            third_closest = {distance, it->second};
+        } else if (distance < third_closest.first || (distance == third_closest.first && third_closest.second->coordinates.y > it->second->coordinates.y)){
+            third_closest = {distance, it->second};
+        }
+    }
+
+    std::vector<PlaceID> close_places_in_order = {};
+    if (third_closest.second != nullptr){
+        close_places_in_order.push_back(first_closest.second->id);
+        close_places_in_order.push_back(second_closest.second->id);
+        close_places_in_order.push_back(third_closest.second->id);
+    } else if (second_closest.second != nullptr){
+        close_places_in_order.push_back(first_closest.second->id);
+        close_places_in_order.push_back(second_closest.second->id);
+    } else if (first_closest.second != nullptr){
+        close_places_in_order.push_back(first_closest.second->id);
+    }
+
+    return close_places_in_order;
 }
 
 bool Datastructures::remove_place(PlaceID id)
 {
-    // Replace this comment with your implementation
-    return false;
+    std::shared_ptr<Place> to_be_removed = get_place(id);
+    if (to_be_removed == nullptr) {
+        return false;
+    }
+    places_by_id_.erase(id);
+
+    for (auto name_it = places_by_name_.begin(); name_it != places_by_name_.end(); name_it++) {
+        if (name_it->second->id == id) {
+            places_by_name_.erase(name_it);
+            break;
+        }
+    }
+
+    for (auto type_it = places_by_type_.begin(); type_it != places_by_type_.end(); type_it++) {
+        if (type_it->second->id == id) {
+            places_by_type_.erase(type_it);
+            break;
+        }
+    }
+    coordinate_sorted_ = false;
+    alphabetical_sorted_ = false;
+    return true;
 }
 
 std::vector<AreaID> Datastructures::all_subareas_in_area(AreaID id)
 {
-    // Replace this comment with your implementation
-    return {NO_AREA};
+    auto parent_area = get_area(id);
+    if (parent_area == nullptr) {
+        return {NO_AREA};
+    }
+    return get_children(parent_area);
 }
 
 AreaID Datastructures::common_area_of_subareas(AreaID id1, AreaID id2)
 {
-    // Replace this comment with your implementation
-    return NO_AREA;
+    auto first_area = areas_by_id_.find(id1);
+    auto second_area = areas_by_id_.find(id2);
+    if (first_area == areas_by_id_.end() || second_area == areas_by_id_.end()) {
+        return NO_AREA;
+    }
+
+    auto first_parent_pointer = first_area->second->parent_area;
+    auto second_parent_pointer = second_area->second->parent_area;
+    std::vector<std::shared_ptr<Area>> first_parents;
+    std::vector<std::shared_ptr<Area>> second_parents;
+
+    while (first_parent_pointer != nullptr) {
+        first_parents.push_back(first_parent_pointer);
+        first_parent_pointer = first_parent_pointer->parent_area;
+    }
+
+    while (second_parent_pointer != nullptr) {
+        second_parents.push_back(second_parent_pointer);
+        second_parent_pointer = second_parent_pointer->parent_area;
+    }
+
+    auto result = std::mismatch(first_parents.rbegin(), first_parents.rend(),
+                                second_parents.rbegin(), second_parents.rend());
+
+    if (result.first == first_parents.rbegin()) {
+        return NO_AREA;
+    }
+    --result.first;
+    return result.first->get()->id;
 }
 
 std::shared_ptr<Place> Datastructures::get_place(PlaceID id) {
@@ -296,6 +397,19 @@ std::shared_ptr<Area> Datastructures::get_area(PlaceID id)
         return nullptr;
     }
     return search_by_id->second;
+}
+
+std::vector<AreaID> Datastructures::get_children(std::weak_ptr<Area> current_area)
+{
+    std::vector<AreaID> subareas = {};
+    for (auto child: current_area.lock()->subareas) {
+        subareas.push_back(child.lock()->id);
+        auto children_subareas = get_children(child);
+        for (auto child: children_subareas) {
+            subareas.push_back(child);
+        }
+    }
+    return subareas;
 }
 
 double calculate_euclidean(Coord coord)

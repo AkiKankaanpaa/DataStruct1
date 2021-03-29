@@ -13,11 +13,12 @@
 #include <map>
 #include <memory>
 #include <math.h>
+#include <algorithm>
 #include <QDebug>
 
 // Types for IDs
-using PlaceID = long int;
-using AreaID = long int;
+using PlaceID = long long int;
+using AreaID = long long int;
 using Name = std::string;
 using WayID = std::string;
 
@@ -70,8 +71,7 @@ double calculate_euclidean(Coord coord);
 
 inline bool operator==(Coord c1, Coord c2) { return c1.x == c2.x && c1.y == c2.y; }
 inline bool operator!=(Coord c1, Coord c2) { return !(c1==c2); }
-inline bool operator<(Coord c1, Coord c2)
-{
+inline bool operator<(Coord c1, Coord c2) {
     double c1_e = calculate_euclidean(c1);
     double c2_e = calculate_euclidean(c2);
     if (c1_e < c2_e) { return true; }
@@ -223,6 +223,8 @@ private:
 
     std::shared_ptr<Place> get_place(PlaceID id);
     std::shared_ptr<Area> get_area(PlaceID id);
+    std::vector<AreaID> get_children(std::weak_ptr<Area> current_area);
+    bool compare_coordinates(Coord coord1, Coord coord2, Coord compare_coord = {0, 0});
 };
 
 #endif // DATASTRUCTURES_HH
