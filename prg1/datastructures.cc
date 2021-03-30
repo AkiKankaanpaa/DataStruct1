@@ -279,6 +279,8 @@ std::vector<PlaceID> Datastructures::places_closest_to(Coord xy, PlaceType type)
     std::pair<double, std::shared_ptr<Place>> second_closest = {NO_DISTANCE, nullptr};
     std::pair<double, std::shared_ptr<Place>> third_closest = {NO_DISTANCE, nullptr};
 
+    // During the loop, we first check if the closest-pairs yet have a value, and if they do, we compare them one by one to the value to determine if
+    // the place should be within the top three and change the closest-pairs accordingly
     for(auto it = beginning; it != ending; it++){
         double distance = calculate_euclidean({xy.x - it->second->coordinates.x, xy.y - it->second->coordinates.y});
         if (first_closest.second == nullptr){
