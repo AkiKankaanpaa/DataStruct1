@@ -386,6 +386,48 @@ MainProgram::CmdResult MainProgram::cmd_add_subarea_to_area(std::ostream& output
     return {};
 }
 
+MainProgram::CmdResult MainProgram::cmd_add_way(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string idstr = *begin++;
+    string coordsstr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    WayID id = idstr;
+
+    vector<Coord> coords;
+    smatch coord;
+    auto sbeg = coordsstr.cbegin();
+    auto send = coordsstr.cend();
+    for ( ; regex_search(sbeg, send, coord, coords_regex_); sbeg = coord.suffix().first)
+    {
+        coords.push_back({convert_string_to<int>(coord[1]),convert_string_to<int>(coord[2])});
+    }
+
+    if (coords.size() < 2)
+    {
+        output << "A way must have at least 2 points, only " << coords.size() << " points given!" << endl;
+        return {};
+    }
+
+    bool ok = ds_.add_way(id, coords);
+    if (ok)
+    {
+        output << "Added way " << id << " with coords:";
+        std::for_each(coords.begin(), coords.end(), [&output,this](auto const& coord){ output << ' '; print_coord(coord,output,false); });
+        output << endl;
+
+        std::vector<std::tuple<Coord, Coord, WayID, Distance>> result;
+        result.emplace_back(coords.front(), coords.back(), id, NO_DISTANCE);
+        result.emplace_back(coords.back(), NO_COORD, NO_WAY, NO_DISTANCE);
+        return {ResultType::ROUTE, CmdResultRoute{result}};
+    }
+    else
+    {
+        output << "Adding way failed!" << endl;
+        return {};
+    }
+}
+
 MainProgram::CmdResult MainProgram::cmd_subarea_in_areas(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
 {
     string idstr = *begin++;
@@ -491,6 +533,92 @@ void MainProgram::test_common_area_of_subareas()
         auto id1 = n_to_areaid(random<decltype(random_areas_added_)>(0, random_areas_added_));
         auto id2 = n_to_areaid(random<decltype(random_areas_added_)>(0, random_areas_added_));
         ds_.common_area_of_subareas(id1, id2);
+    }
+}
+
+MainProgram::CmdResult MainProgram::cmd_all_ways(std::ostream &output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    assert( begin == end && "Impossible number of parameters!");
+
+    auto wayids = ds_.all_ways();
+    if (wayids.empty())
+    {
+        output << "No ways!" << endl;
+    }
+
+    sort(wayids.begin(), wayids.end());
+
+    unsigned int i = 1;
+    for (auto const& wayid : wayids)
+    {
+        output << i <<". " << wayid << endl;
+        ++i;
+    }
+
+    return {};
+}
+
+MainProgram::CmdResult MainProgram::cmd_ways_from(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string xstr = *begin++;
+    string ystr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    Coord coord = {convert_string_to<int>(xstr),convert_string_to<int>(ystr)};
+
+    auto ways = ds_.ways_from(coord);
+    if (ways.empty())
+    {
+        output << "No ways from coord ";
+        print_coord(coord, output);
+    }
+
+    sort(ways.begin(), ways.end());
+    vector<tuple<Coord, Coord, WayID, Distance>> result;
+    transform(ways.begin(), ways.end(), back_inserter(result),
+              [coord](auto way)mutable{ return make_tuple(coord, way.second, way.first, NO_DISTANCE); });
+
+    return {ResultType::WAYS, CmdResultRoute{result}};
+}
+
+void MainProgram::test_ways_from()
+{
+ if (random_ways_added_ > 0) // Don't do anything if there's no ways
+ {
+     auto coord = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+     ds_.ways_from(coord);
+ }
+}
+
+MainProgram::CmdResult MainProgram::cmd_way_coords(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string idstr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    WayID id = idstr;
+
+    auto coords = ds_.get_way_coords(id);
+
+    if (coords.empty())
+    {
+        output << "No coords returned!" << endl;
+        return {};
+    }
+
+    output << "Way "; print_way(id, output, false); output << " has coords:" << endl;
+    std::for_each(coords.begin(), coords.end(), [&output,this](auto const& coord){ print_coord(coord,output); });
+    output << endl;
+
+    return {};
+}
+
+
+void MainProgram::test_way_coords()
+{
+    if (random_ways_added_ > 0)
+    {
+        WayID id = n_to_wayid(random<decltype(random_ways_added_)>(0, random_ways_added_));
+        ds_.get_way_coords(id);
     }
 }
 
@@ -617,9 +745,30 @@ MainProgram::CmdResult MainProgram::cmd_random_add(std::ostream& output, MatchIt
     return {};
 }
 
+MainProgram::CmdResult MainProgram::cmd_random_ways(std::ostream &output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string sizestr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    unsigned int size = convert_string_to<unsigned int>(sizestr);
+
+    add_random_ways(size);
+
+    output << "Added: " << size << " ways." << endl;
+
+    view_dirty = true;
+
+    return {};
+}
+
 void MainProgram::test_random_add()
 {
     add_random_places_areas(1);
+}
+
+void MainProgram::test_random_ways()
+{
+    add_random_ways(1);
 }
 
 MainProgram::CmdResult MainProgram::cmd_randseed(std::ostream& output, MatchIter begin, MatchIter end)
@@ -817,6 +966,22 @@ MainProgram::CmdResult MainProgram::cmd_all_areas(std::ostream& output, MainProg
 
     sort(areas.begin(), areas.end());
     return {ResultType::AREAIDLIST, areas};
+}
+
+void MainProgram::add_random_ways(unsigned int n)
+{
+    for (unsigned int i=0; i<n; ++i)
+    {
+        ++random_ways_added_;
+
+        WayID id = n_to_wayid(random_ways_added_);
+        Coord c1 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+        Coord c2 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+        if (c1.x != c2.x || c1.y != c2.y)
+        {
+            ds_.add_way(id, {c1,c2});
+        }
+    }
 }
 
 MainProgram::CmdResult MainProgram::cmd_stopwatch(std::ostream& output, MatchIter begin, MatchIter end)
@@ -1041,6 +1206,280 @@ void MainProgram::test_find_places_type()
     }
 }
 
+MainProgram::CmdResult MainProgram::cmd_route_any(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string fromxstr = *begin++;
+    string fromystr = *begin++;
+    string toxstr = *begin++;
+    string toystr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    Coord fromxy = {convert_string_to<int>(fromxstr),convert_string_to<int>(fromystr)};
+    Coord toxy = {convert_string_to<int>(toxstr),convert_string_to<int>(toystr)};
+
+    auto steps = ds_.route_any(fromxy, toxy);
+
+    vector<tuple<Coord, Coord, WayID, Distance>> result;
+
+    if (steps.empty())
+    {
+        output << "No route found!" << endl;
+    }
+    else if (steps.front() == make_tuple(NO_COORD, NO_WAY, NO_DISTANCE))
+    {
+        output << "Starting or destination coord has no ways!" << endl;
+    }
+    else
+    {
+        auto [coord, wayid, dist] = steps.front();
+        for (auto iter = steps.begin()+1; iter != steps.end(); ++iter)
+        {
+            auto& [ncoord, nwayid, ndist] = *iter;
+            result.emplace_back(coord, ncoord, wayid, dist);
+            coord = ncoord; wayid = nwayid; dist = ndist;
+        }
+        result.emplace_back(coord, NO_COORD, NO_WAY, dist);
+    }
+
+    return {ResultType::ROUTE, result};
+}
+
+void MainProgram::test_route_any()
+{
+    // Choose two random places
+    Coord coord1 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+    Coord coord2 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+
+    ds_.route_any(coord1, coord2);
+}
+
+MainProgram::CmdResult MainProgram::cmd_remove_way(std::ostream &output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string idstr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    WayID id = idstr;
+
+    bool ok = ds_.remove_way(id);
+    if (ok)
+    {
+        output << "Removed way " << id << endl;
+    }
+    else
+    {
+        output << "Removing way failed!" << endl;
+    }
+
+    return {};
+}
+
+void MainProgram::test_remove_way()
+{
+    if (random_ways_added_ > 0)
+    {
+        WayID id = n_to_wayid(random<decltype(random_ways_added_)>(0, random_ways_added_));
+        ds_.remove_way(id);
+    }
+}
+
+MainProgram::CmdResult MainProgram::cmd_route_shortest_distance(std::ostream& output, MatchIter begin, MatchIter end)
+{
+    string fromxstr = *begin++;
+    string fromystr = *begin++;
+    string toxstr = *begin++;
+    string toystr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    Coord fromxy = {convert_string_to<int>(fromxstr),convert_string_to<int>(fromystr)};
+    Coord toxy = {convert_string_to<int>(toxstr),convert_string_to<int>(toystr)};
+
+    auto steps = ds_.route_shortest_distance(fromxy, toxy);
+
+    vector<tuple<Coord, Coord, WayID, Distance>> result;
+
+    if (steps.empty())
+    {
+        output << "No route found!" << endl;
+    }
+    else if (steps.front() == make_tuple(NO_COORD, NO_WAY, NO_DISTANCE))
+    {
+        output << "Starting or destination coord has no ways!" << endl;
+    }
+    else
+    {
+        auto [coord, wayid, dist] = steps.front();
+        for (auto iter = steps.begin()+1; iter != steps.end(); ++iter)
+        {
+            auto& [ncoord, nwayid, ndist] = *iter;
+            result.emplace_back(coord, ncoord, wayid, dist);
+            coord = ncoord; wayid = nwayid; dist = ndist;
+        }
+        result.emplace_back(coord, NO_COORD, NO_WAY, dist);
+    }
+
+    return {ResultType::ROUTE, result};
+}
+
+void MainProgram::test_route_shortest_distance()
+{
+    // Choose two random places
+    Coord coord1 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+    Coord coord2 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+
+    ds_.route_shortest_distance(coord1, coord2);
+}
+
+MainProgram::CmdResult MainProgram::cmd_route_least_crossroads(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string fromxstr = *begin++;
+    string fromystr = *begin++;
+    string toxstr = *begin++;
+    string toystr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    Coord fromxy = {convert_string_to<int>(fromxstr),convert_string_to<int>(fromystr)};
+    Coord toxy = {convert_string_to<int>(toxstr),convert_string_to<int>(toystr)};
+
+    auto steps = ds_.route_least_crossroads(fromxy, toxy);
+
+    vector<tuple<Coord, Coord, WayID, Distance>> result;
+
+    if (steps.empty())
+    {
+        output << "No route found!" << endl;
+    }
+    else if (steps.front() == make_tuple(NO_COORD, NO_WAY, NO_DISTANCE))
+    {
+        output << "Starting or destination coord has no ways!" << endl;
+    }
+    else
+    {
+        auto [coord, wayid, dist] = steps.front();
+        for (auto iter = steps.begin()+1; iter != steps.end(); ++iter)
+        {
+            auto& [ncoord, nwayid, ndist] = *iter;
+            result.emplace_back(coord, ncoord, wayid, dist);
+            coord = ncoord; wayid = nwayid; dist = ndist;
+        }
+        result.emplace_back(coord, NO_COORD, NO_WAY, dist);
+    }
+
+    return {ResultType::ROUTE, result};
+}
+
+void MainProgram::test_route_least_crossroads()
+{
+    // Choose two random places
+    Coord coord1 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+    Coord coord2 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+
+    ds_.route_least_crossroads(coord1, coord2);
+}
+
+MainProgram::CmdResult MainProgram::cmd_route_with_cycle(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    string fromxstr = *begin++;
+    string fromystr = *begin++;
+    assert( begin == end && "Impossible number of parameters!");
+
+    Coord fromxy = {convert_string_to<int>(fromxstr),convert_string_to<int>(fromystr)};
+
+    auto steps = ds_.route_with_cycle(fromxy);
+
+    if (steps.empty())
+    {
+        output << "No route found!" << endl;
+        return {};
+    }
+
+    if (steps.front() == make_tuple(NO_COORD, NO_WAY/*, NO_DISTANCE*/))
+    {
+        output << "Starting coord has no ways!" << endl;
+        return {};
+    }
+
+    if (steps.size() < 2)
+    {
+        output << "Too short route (" << steps.size() << ") to contain cycles!" << endl;
+        return {};
+    }
+
+    auto lastcoord = std::get<0>(steps.back());
+    auto cycbeg = std::find_if(steps.begin(), steps.end()-1, [lastcoord](auto const& e){ return std::get<0>(e) == lastcoord; });
+    if (cycbeg == steps.end())
+    {
+        output << "No cycle found in returned route!";
+        return {};
+    }
+
+    // If necessary, swap cycle so that it starts with smaller wayid
+    if ((cycbeg+1) < (steps.end()-2))
+    {
+        auto wayfirst = std::get<1>(*cycbeg);
+        auto waylast = std::get<1>(*(steps.end()-2));
+        if (waylast < wayfirst)
+        {
+           std::reverse(cycbeg+1, steps.end()-1);
+           // Rotate the wayids to fix the reversed order
+           auto firstid = std::get<1>(*cycbeg);
+           for (auto i = cycbeg; i != steps.end()-2; ++i)
+           {
+               std::get<1>(*i) = std::get<1>(*(i+1));
+           }
+           std::get<1>(*(steps.end()-2)) = firstid;
+        }
+    }
+
+    vector<tuple<Coord, Coord, WayID, Distance>> result;
+    // Don't put returned way ids or distances in the result
+    auto [coord, wayid/*, dist*/] = steps.front();
+    for (auto iter = steps.begin()+1; iter != steps.end(); ++iter)
+    {
+        auto& [ncoord, nwayid/*, ndist*/] = *iter;
+        result.emplace_back(coord, ncoord, wayid, NO_DISTANCE);
+        coord = ncoord; wayid = nwayid;/* dist = ndist;*/
+    }
+    result.emplace_back(coord, NO_COORD, NO_WAY, NO_DISTANCE);
+
+    return {ResultType::ROUTE, result};
+}
+
+void MainProgram::test_route_with_cycle()
+{
+    // Choose two random places
+    Coord coord1 = n_to_coord(random(decltype(random_ways_added_)(0),random_ways_added_));
+
+    ds_.route_with_cycle(coord1);
+}
+
+MainProgram::CmdResult MainProgram::cmd_trim_ways(std::ostream &output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    assert( begin == end && "Impossible number of parameters!");
+
+    auto result = ds_.trim_ways();
+
+    output << "The remaining ways have a total length of " << result << endl;
+
+    view_dirty = true;
+
+    return {};
+}
+
+void MainProgram::test_trim_ways()
+{
+    ds_.trim_ways();
+}
+
+MainProgram::CmdResult MainProgram::cmd_clear_ways(std::ostream& output, MainProgram::MatchIter begin, MainProgram::MatchIter end)
+{
+    assert( begin == end && "Impossible number of parameters!");
+
+    ds_.clear_ways();
+    output << "All routes removed." << std::endl;
+
+    return {};
+}
+
 string const plcidx = "([0-9]+)";
 string const areaidx = "([0-9]+)";
 string const wayidx = "([a-zA-Z0-9]+)";
@@ -1076,8 +1515,21 @@ vector<MainProgram::CmdInfo> MainProgram::cmds_ =
     {"change_place_name", "ID 'Newname'", plcidx+wsx+namex, &MainProgram::cmd_change_place_name, &MainProgram::test_change_place_name },
     {"change_place_coord", "ID (x,y)", plcidx+wsx+coordx, &MainProgram::cmd_change_place_coord, &MainProgram::test_change_place_coord },
     {"add_subarea_to_area", "SubareaID AreaID", areaidx+wsx+areaidx, &MainProgram::cmd_add_subarea_to_area, nullptr },
+    {"all_ways", "", "", &MainProgram::cmd_all_ways, nullptr },
+    {"add_way", "WayID (x,y) (x,y)...", wayidx+"((?:"+wsx+optcoordx+")+)", &MainProgram::cmd_add_way, nullptr },
+    {"random_ways", "number_of_ways_to_add", numx,
+     &MainProgram::cmd_random_ways, &MainProgram::test_random_ways },
+    {"way_coords", "WayID", wayidx, &MainProgram::cmd_way_coords, &MainProgram::test_way_coords },
+    {"ways_from", "Coord", coordx, &MainProgram::cmd_ways_from, &MainProgram::test_ways_from },
+    {"clear_ways", "", "", &MainProgram::cmd_clear_ways, nullptr },
+    {"remove_way", "WayID", wayidx, &MainProgram::cmd_remove_way, &MainProgram::test_remove_way },
     {"subarea_in_areas", "AreaID", areaidx, &MainProgram::cmd_subarea_in_areas, &MainProgram::test_subarea_in_areas },
     {"all_subareas_in_area", "AreaID", areaidx, &MainProgram::cmd_all_subareas_in_area, &MainProgram::test_all_subareas_in_area },
+    {"route_any", "CoordFrom CoordTo", coordx+wsx+coordx, &MainProgram::cmd_route_any, &MainProgram::test_route_any },
+    {"route_least_crossroads", "CoordFrom CoordTo", coordx+wsx+coordx, &MainProgram::cmd_route_least_crossroads, &MainProgram::test_route_least_crossroads },
+    {"route_shortest_distance", "CoordFrom CoordTo", coordx+wsx+coordx, &MainProgram::cmd_route_shortest_distance, &MainProgram::test_route_shortest_distance },
+    {"route_with_cycle", "Coordfrom", coordx, &MainProgram::cmd_route_with_cycle, &MainProgram::test_route_with_cycle },
+    {"trim_ways", "", "", &MainProgram::cmd_trim_ways, &MainProgram::test_trim_ways },
     {"quit", "", "", nullptr, nullptr },
     {"help", "", "", &MainProgram::help_command, nullptr },
     {"read", "\"in-filename\" [silent]", "\"([-a-zA-Z0-9 ./:_]+)\"(?:"+wsx+"(silent))?", &MainProgram::cmd_read, nullptr },
@@ -1106,8 +1558,9 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
     output << "WARNING: Debug STL enabled, performance will be worse than expected (maybe also asymptotically)!" << endl;
 #endif // _GLIBCXX_DEBUG
 
-    vector<string> optional_cmds({"all_subareas_in_area", "places_closest_to", "remove_place", "common_area_of_subareas"});
-    vector<string> nondefault_cmds({"remove_place", "find_places_name", "find_places_type"});
+    vector<string> optional_cmds({"places_closest_to", "places_common_area", "route_least_crossroads", "route_with_cycle", "route_shortest_distance",
+                                  "add_walking_connections"});
+    vector<string> nondefault_cmds({"remove_place", "find_places", "way_coords"});
 
     string commandstr = *begin++;
     unsigned int timeout = convert_string_to<unsigned int>(*begin++);
@@ -1184,7 +1637,13 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
         return {};
     }
 
-    output << setw(7) << "N" << " , " << setw(12) << "add (sec)" << " , " << setw(12) << "cmds (sec)"  << " , " << setw(12) << "total (sec)" << endl;
+#ifdef USE_PERF_EVENT
+    output << setw(7) << "N" << " , " << setw(12) << "add (sec)" << " , " << setw(12) << "add (count)" << " , " << setw(12) << "cmds (sec)" << " , "
+           << setw(12) << "cmds (count)"  << " , " << setw(12) << "total (sec)" << " , " << setw(12) << "total (count)" << endl;
+#else
+    output << setw(7) << "N" << " , " << setw(12) << "add (sec)" << " , " << setw(12) << "cmds (sec)" << " , "
+           << setw(12) << "total (sec)" << endl;
+#endif
     flush_output(output);
 
     auto stop = false;
@@ -1195,17 +1654,18 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
         output << setw(7) << n << " , " << flush;
 
         ds_.clear_all();
+        ds_.clear_ways();
         init_primes();
 
-        Stopwatch stopwatch;
-        stopwatch.start();
+        Stopwatch stopwatch(true); // Use also instruction counting, if enabled
 
         // Add random places
         for (unsigned int i = 0; i < n / 1000; ++i)
         {
+            stopwatch.start();
             add_random_places_areas(1000);
-
             stopwatch.stop();
+
             if (stopwatch.elapsed() >= timeout)
             {
                 output << "Timeout!" << endl;
@@ -1218,14 +1678,56 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
                 stop = true;
                 break;
             }
-            stopwatch.start();
         }
         if (stop) { break; }
 
-        add_random_places_areas(n % 1000);
+        if (n % 1000 != 0)
+        {
+            stopwatch.start();
+            add_random_places_areas(n % 1000);
+            stopwatch.stop();
+        }
 
+        // Add random ways
+        for (unsigned int i = 0; i < n / 1000; ++i)
+        {
+            stopwatch.start();
+            add_random_ways(1000);
+            stopwatch.stop();
+
+            if (stopwatch.elapsed() >= timeout)
+            {
+                output << "Timeout!" << endl;
+                stop = true;
+                break;
+            }
+            if (check_stop())
+            {
+                output << "Stopped!" << endl;
+                stop = true;
+                break;
+            }
+        }
+        if (stop) { break; }
+
+        if (n % 1000 != 0)
+        {
+            stopwatch.start();
+            add_random_ways(n % 1000);
+            stopwatch.stop();
+        }
+
+#ifdef USE_PERF_EVENT
+        auto addcount = stopwatch.count();
+#endif
         auto addsec = stopwatch.elapsed();
+
+#ifdef USE_PERF_EVENT
+        output << setw(12) << addsec << " , " << setw(12) << addcount << " , " << flush;
+#else
         output << setw(12) << addsec << " , " << flush;
+#endif
+
         if (addsec >= timeout)
         {
             output << "Timeout!" << endl;
@@ -1233,6 +1735,7 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
             break;
         }
 
+        stopwatch.start();
         ds_.creation_finished();
         for (unsigned int repeat = 0; repeat < repeat_count; ++repeat)
         {
@@ -1272,11 +1775,19 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
                 stopwatch.start();
             }
         }
+        stopwatch.stop();
         if (stop) { break; }
 
-        stopwatch.stop();
+#ifdef USE_PERF_EVENT
+        auto totalcount = stopwatch.count();
+#endif
         auto totalsec = stopwatch.elapsed();
+
+#ifdef USE_PERF_EVENT
+        output << setw(12) << totalsec-addsec << " , " << setw(12) << totalcount-addcount << " , " << setw(12) << totalsec << " , " << setw(12) << totalcount;
+#else
         output << setw(12) << totalsec-addsec << " , " << setw(12) << totalsec;
+#endif
 
 //        unsigned long int maxmem;
 //        string unit;
@@ -1291,6 +1802,7 @@ MainProgram::CmdResult MainProgram::cmd_perftest(std::ostream& output, MatchIter
     }
 
     ds_.clear_all();
+    ds_.clear_ways();
     init_primes();
 
 #ifdef _GLIBCXX_DEBUG
@@ -1715,6 +2227,14 @@ PlaceID MainProgram::n_to_placeid(unsigned long int n)
     unsigned long int hash = prime2_*n + prime1_;
 
     return hash % static_cast<unsigned long int>(std::numeric_limits<PlaceID>::max());
+}
+
+Coord MainProgram::n_to_coord(unsigned long n)
+{
+    unsigned long int hash = prime1_ * n + prime2_;
+    hash = hash ^ (hash + 0x9e3779b9 + (hash << 6) + (hash >> 2)); // :-P
+
+    return {static_cast<int>(hash % 1000), static_cast<int>((hash/1000) % 1000)};
 }
 
 void MainProgram::init_regexs()
