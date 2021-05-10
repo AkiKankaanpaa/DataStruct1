@@ -27,9 +27,9 @@ Datastructures::Datastructures():
     places_by_type_({}),
     ways_by_id_({}),
     ways_by_coord_({}),
+    visited_coordinates_({}),
     chosen_route_({}),
-    cyclic_route_({}),
-    visited_coordinates_({})
+    cyclic_route_({})
 {
 }
 
@@ -438,6 +438,7 @@ double calculate_euclidean(Coord coord)
 std::vector<WayID> Datastructures::all_ways()
 {
     std::vector<WayID> way_vector = {};
+    // Ways_by_id_ has no repetition
     for (auto it = ways_by_id_.begin(); it != ways_by_id_.end(); it++) {
         way_vector.push_back(it->first);
     }
@@ -452,13 +453,16 @@ bool Datastructures::add_way(WayID id, std::vector<Coord> coords)
         return false;
     }
     auto added_way = std::make_shared<Way>(id, coords);
+    // Both ways have two ends
     Coord end1 = coords.front();
     Coord end2 = coords.back();
 
+    // Add to all of the data structures that take the way as the value
     ways_by_id_.insert({id, added_way});
     ways_by_coord_.insert({end1, added_way});
     ways_by_coord_.insert({end2, added_way});
 
+    // Making sure to only create a Crossroad_data element if one does not exist yet with the same coordinates
     if (visited_coordinates_.find(end1) == visited_coordinates_.end()) {
         auto added_cr = std::make_shared<Crossroad_data>(end1);
         visited_coordinates_.insert({end1, added_cr});
@@ -474,8 +478,10 @@ bool Datastructures::add_way(WayID id, std::vector<Coord> coords)
 std::vector<std::pair<WayID, Coord>> Datastructures::ways_from(Coord xy)
 {
     std::vector<std::pair<WayID, Coord>> found_ways = {};
+    // Only need to go through ways connected to coordinate
     auto iterator_pair = ways_by_coord_.equal_range(xy);
     for (auto it = iterator_pair.first; it != iterator_pair.second; ++it) {
+        // If the first coordinate is the checked one, use the other one, if second coordinate other way around
         if (xy == it->second->end1) {
             found_ways.push_back(std::make_pair(it->second->id, it->second->end2));
         } else {
@@ -508,8 +514,10 @@ std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_any(Coord
     if (ways_from(toxy).size() == 0 || ways_from(fromxy).size() == 0) {
         return {{NO_COORD, NO_WAY, NO_DISTANCE}};
     }
-    clean_for_search();
+    // Prepares for search
+    clean_for_search(NORMAL);
     search_any(fromxy, toxy, 0);
+    // Flip to correct order
     std::reverse(chosen_route_.begin(), chosen_route_.end());
     return chosen_route_;
 }
@@ -520,24 +528,31 @@ bool Datastructures::remove_way(WayID id)
     if (searched_way == nullptr) {
         return false;
     }
+    // Pickup both of the ends of the way
     Coord wanted_coord1 = searched_way->end1;
     Coord wanted_coord2 = searched_way->end2;
     auto iterator_pair = ways_by_coord_.equal_range(wanted_coord1);
     for (auto it = iterator_pair.first; it != iterator_pair.second; ++it) {
+        // If an identical id can be found, remove it from the multimap
         if (id == it->second->id) {
             ways_by_coord_.erase(it);
+            // Only one possible since id is unique
             break;
         }
     }
+    // If there are no more ways connecting to the coordinate
     if (ways_from(wanted_coord1).size() == 0) {
         visited_coordinates_.erase(wanted_coord1);
     }
 
+    // Pickup both of the ends of the way
     ways_by_coord_.equal_range(wanted_coord2);
     auto iterator_pair2 = ways_by_coord_.equal_range(wanted_coord2);
     for (auto it2 = iterator_pair2.first; it2 != iterator_pair2.second; ++it2) {
+        // If an identical id can be found, remove it from the multimap
         if (id == it2->second->id) {
             ways_by_coord_.erase(it2);
+            // Only one possible since id is unique
             break;
         }
     }
@@ -545,6 +560,7 @@ bool Datastructures::remove_way(WayID id)
         visited_coordinates_.erase(wanted_coord2);
     }
 
+    // Finally erase it by using the id
     ways_by_id_.erase(id);
     return true;
 }
@@ -552,51 +568,60 @@ bool Datastructures::remove_way(WayID id)
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_least_crossroads(Coord fromxy, Coord toxy)
 {
+    // No answer
     return {{NO_COORD, NO_WAY, NO_DISTANCE}};
 }
 
 std::vector<std::tuple<Coord, WayID> > Datastructures::route_with_cycle(Coord fromxy)
 {
+    // If cannot traverse from starting node
     if (ways_from(fromxy).size() == 0) {
         return {{NO_COORD, NO_WAY}};
     }
-    clean_for_search();
+    // Prepares for search
+    clean_for_search(CYCLE);
     search_cycle(fromxy, NO_COORD);
+    // Flip to correct order
     std::reverse(cyclic_route_.begin(), cyclic_route_.end());
     return cyclic_route_;
 }
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_shortest_distance(Coord fromxy, Coord toxy)
 {
-    // Replace this comment with your implementation
+    // No answer
     return {{NO_COORD, NO_WAY, NO_DISTANCE}};
 }
 
 Distance Datastructures::trim_ways()
 {
-    // for (auto it = ways_by_id_.begin(); it != ways_by_id_.end(); ++it): {
-
-    // }
+    // No answer
     return NO_DISTANCE;
 }
 
 void Datastructures::search_any(Coord current, Coord goal, int route_length)
 {
-    visited_coordinates_.at(current)->minimum_distance = route_length;
+    // Update the accessed coordinates and current route length
+    visited_coordinates_.at(current)->distance = route_length;
     visited_coordinates_.at(current)->visited = true;
     if (current == goal) {
+        // When goal is reached, raise flag for other recursive functions
         route_found_ = true;
-        chosen_route_.push_back({goal,NO_WAY,visited_coordinates_.at(current)->minimum_distance});
+        // Add the finishing value to the vector with goal, NO_WAY
+        chosen_route_.push_back({goal,NO_WAY,visited_coordinates_.at(current)->distance});
         return;
     }
+    // Recursively loop over all values using DFS
     auto current_ways = ways_from(current);
     for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
+        // If already visited no need to check
         if (visited_coordinates_.at(it->second)->visited == true) {
             continue;
         }
+        // Keep up the current total length of the route
         search_any(it->second, goal, route_length + ways_by_id_.at(it->first)->length);
+        // When the route has been found, each instance can simply record their current data and return
         if (route_found_) {
-            chosen_route_.push_back({current,it->first,visited_coordinates_.at(current)->minimum_distance});
+            chosen_route_.push_back({current,it->first,visited_coordinates_.at(current)->distance});
             return;
         }
     }
@@ -605,14 +630,17 @@ void Datastructures::search_any(Coord current, Coord goal, int route_length)
 
 void Datastructures::search_cycle(Coord current, Coord previous)
 {
+    // If the current node has been visited before, we have found a loop
     if (visited_coordinates_.at(current)->visited == true) {
         route_found_ = true;
+        // Add the finishing value to the vector with the cycle-node, NO_WAY
         cyclic_route_.push_back({current,NO_WAY});
         return;
     }
     visited_coordinates_.at(current)->visited = true;
     auto current_ways = ways_from(current);
     for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
+        // Prevents from going straight backwards to the previous node
         if (it->second == previous) {
             continue;
         }
@@ -625,14 +653,20 @@ void Datastructures::search_cycle(Coord current, Coord previous)
     return;
 }
 
-void Datastructures::clean_for_search()
+void Datastructures::clean_for_search(int type)
 {
+    // Undo flag
     route_found_ = false;
     for (auto it = visited_coordinates_.begin(); it != visited_coordinates_.end(); ++it) {
-        it->second->minimum_distance = NO_VALUE;
+        it->second->distance = NO_VALUE;
         it->second->visited = false;
     }
-    chosen_route_.clear();
+    // Clear current routes
+    if (type == NORMAL) {
+        chosen_route_.clear();
+    } else {
+        cyclic_route_.clear();
+    }
 }
 
 std::shared_ptr<Way> Datastructures::get_way(WayID id)

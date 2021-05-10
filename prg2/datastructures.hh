@@ -77,10 +77,12 @@ struct Area {
     std::vector<std::weak_ptr<Area>> subareas;
 };
 
+// Type to store the data of each Area
 struct Way {
     Way(WayID id, std::vector<Coord> coordinates):
         id(id), coordinates(coordinates), end1(*coordinates.begin()), end2(*coordinates.rbegin()), length(0)
     {
+        // Calculate the total length according to the specification. std::floor rounds down to integers.
         for (std::vector<int>::size_type i = 0; i != coordinates.size() - 1; ++i) {
             int section_length = std::floor(std::sqrt(std::pow(coordinates[i].x - coordinates[i+1].x, 2)
                                             + std::pow(coordinates[i].y - coordinates[i+1].y, 2)));
@@ -89,19 +91,25 @@ struct Way {
     }
     WayID id;
     std::vector<Coord> coordinates;
+    // Both ends of the way stored
     Coord end1;
     Coord end2;
     int length;
 };
 
+// Stores the data each crossroad-coordinate has
 struct Crossroad_data {
     Crossroad_data(Coord coordinates):
-        coordinates(coordinates), visited(false), minimum_distance(NO_DISTANCE)
+        coordinates(coordinates), visited(false), distance(NO_DISTANCE)
     {}
     Coord coordinates;
     bool visited;
-    int minimum_distance;
+    int distance;
 };
+
+// Used by the cleaning function for ways
+const int NORMAL = 0;
+const int CYCLE = 1;
 
 // Function used to calculate the euclidean distance
 // Estimate of performance: O(1)
@@ -275,10 +283,10 @@ public:
     // Short rationale for estimate: All of the clear() functions are linear
     void clear_ways();
 
-    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore O(n + m) -> O(m)
+    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore technically O(n + m)
     // Short rationale for estimate: Simply looping over the containers as necessary when cleaning
-    // them ready for the search, we traverse without repetition in search_any(), which is a
-    // DFS searching algorithm, therefore O(m)
+    // them ready for the search, so O(n). We traverse without repetition in search_any(), which is a
+    // DFS searching algorithm, therefore O(m).
     std::vector<std::tuple<Coord, WayID, Distance>> route_any(Coord fromxy, Coord toxy);
 
     // Non-compulsory operations
@@ -292,12 +300,10 @@ public:
     // Short rationale for estimate: -
     std::vector<std::tuple<Coord, WayID, Distance>> route_least_crossroads(Coord fromxy, Coord toxy);
 
-    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore O(n + m) -> O(m)
+    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore technically O(n + m)
     // Short rationale for estimate: Simply looping over the containers as necessary when cleaning
-    // them ready for the search, we traverse without repetition in search_any(), which is a
-    // DFS searching algorithm, therefore O(m), seemingly this route algorithm is considerably more
-    // expensive than the route_any, so an educated guess would be to say O(m) is considerably
-    // more expensive than O(n) in this case
+    // them ready for the search, so O(n). We traverse without repetition in search_any(), which is a
+    // DFS searching algorithm, therefore O(m).
     std::vector<std::tuple<Coord, WayID>> route_with_cycle(Coord fromxy);
 
     // Estimate of performance: -
@@ -355,6 +361,7 @@ private:
     std::vector<std::tuple<Coord, WayID, Distance>> chosen_route_;
     std::vector<std::tuple<Coord, WayID>> cyclic_route_;
 
+    // Global variable used to signal recursive functions to stop searching when a route is found
     bool route_found_;
 
     // Estimate of performance: O(n) to the amount of ways in ways_by_id_
@@ -363,13 +370,13 @@ private:
     void search_any(Coord current, Coord goal, int route_length);
 
     // Estimate of performance: O(n) to the amount of ways in ways_by_id_
-    // Short rationale for estimate: we traverse without repetition (until the single looping node), which is a
+    // Short rationale for estimate: we traverse without repetition (until the single looping node is found), which is a
     // DFS searching algorithm, therefore O(n)
     void search_cycle(Coord current, Coord previous);
 
     // Estimate of performance: O(n) in the visited_coordinates container size
     // Short rationale for estimate: Simply loops over the container
-    void clean_for_search();
+    void clean_for_search(int type);
 
     // Estimate of performance: O(n), average case is constant
     // Short rationale for estimate: Up to linear between the searched container: std::find()
