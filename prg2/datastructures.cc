@@ -435,15 +435,6 @@ double calculate_euclidean(Coord coord)
     return std::sqrt(std::pow(coord.x, 2) + std::pow(coord.y, 2));
 }
 
-std::shared_ptr<Way> Datastructures::get_way(WayID id)
-{
-    auto search_by_id = ways_by_id_.find(id);
-    if (search_by_id == ways_by_id_.end()) {
-        return nullptr;
-    }
-    return search_by_id->second;
-}
-
 std::vector<WayID> Datastructures::all_ways()
 {
     std::vector<WayID> way_vector = {};
@@ -464,15 +455,18 @@ bool Datastructures::add_way(WayID id, std::vector<Coord> coords)
     Coord end1 = coords.front();
     Coord end2 = coords.back();
 
-
     ways_by_id_.insert({id, added_way});
     ways_by_coord_.insert({end1, added_way});
     ways_by_coord_.insert({end2, added_way});
+
     if (visited_coordinates_.find(end1) == visited_coordinates_.end()) {
-        visited_coordinates_.insert({end1, false});
+        auto added_cr = std::make_shared<Crossroad_data>(end1);
+        visited_coordinates_.insert({end1, added_cr});
     }
+
     if (visited_coordinates_.find(end2) == visited_coordinates_.end()) {
-        visited_coordinates_.insert({end2, false});
+        auto added_cr = std::make_shared<Crossroad_data>(end2);
+        visited_coordinates_.insert({end2, added_cr});
     }
     return true;
 }
@@ -502,10 +496,11 @@ std::vector<Coord> Datastructures::get_way_coords(WayID id)
 
 void Datastructures::clear_ways()
 {
-    ways_by_id_ = {};
-    ways_by_coord_ = {};
-    std::unordered_map<Coord, bool, CoordHash> visited_coordinates_ = {};
+    ways_by_id_.clear();
+    ways_by_coord_.clear();
+    visited_coordinates_.clear();
     chosen_route_.clear();
+    cyclic_route_.clear();
 }
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_any(Coord fromxy, Coord toxy)
@@ -513,35 +508,62 @@ std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_any(Coord
     if (ways_from(toxy).size() == 0 || ways_from(fromxy).size() == 0) {
         return {{NO_COORD, NO_WAY, NO_DISTANCE}};
     }
-    route_found_ = false;
-    for (auto it = visited_coordinates_.begin(); it != visited_coordinates_.end(); ++it) {
-        it->second = false;
-    }
-    chosen_route_.clear();
-    current_distance_ = 0;
-
-    dfs_search(fromxy, toxy, true);
+    clean_for_search();
+    search_any(fromxy, toxy, 0);
     std::reverse(chosen_route_.begin(), chosen_route_.end());
     return chosen_route_;
-
 }
 
 bool Datastructures::remove_way(WayID id)
 {
-    // Replace this comment with your implementation
-    return false;
+    std::shared_ptr<Way> searched_way = get_way(id);
+    if (searched_way == nullptr) {
+        return false;
+    }
+    Coord wanted_coord1 = searched_way->end1;
+    Coord wanted_coord2 = searched_way->end2;
+    auto iterator_pair = ways_by_coord_.equal_range(wanted_coord1);
+    for (auto it = iterator_pair.first; it != iterator_pair.second; ++it) {
+        if (id == it->second->id) {
+            ways_by_coord_.erase(it);
+            break;
+        }
+    }
+    if (ways_from(wanted_coord1).size() == 0) {
+        visited_coordinates_.erase(wanted_coord1);
+    }
+
+    ways_by_coord_.equal_range(wanted_coord2);
+    auto iterator_pair2 = ways_by_coord_.equal_range(wanted_coord2);
+    for (auto it2 = iterator_pair2.first; it2 != iterator_pair2.second; ++it2) {
+        if (id == it2->second->id) {
+            ways_by_coord_.erase(it2);
+            break;
+        }
+    }
+    if (ways_from(wanted_coord2).size() == 0) {
+        visited_coordinates_.erase(wanted_coord2);
+    }
+
+    ways_by_id_.erase(id);
+    return true;
 }
+
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_least_crossroads(Coord fromxy, Coord toxy)
 {
-    // Replace this comment with your implementation
     return {{NO_COORD, NO_WAY, NO_DISTANCE}};
 }
 
 std::vector<std::tuple<Coord, WayID> > Datastructures::route_with_cycle(Coord fromxy)
 {
-    // Replace this comment with your implementation
-    return {{NO_COORD, NO_WAY}};
+    if (ways_from(fromxy).size() == 0) {
+        return {{NO_COORD, NO_WAY}};
+    }
+    clean_for_search();
+    search_cycle(fromxy, NO_COORD);
+    std::reverse(cyclic_route_.begin(), cyclic_route_.end());
+    return cyclic_route_;
 }
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_shortest_distance(Coord fromxy, Coord toxy)
@@ -552,37 +574,72 @@ std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_shortest_
 
 Distance Datastructures::trim_ways()
 {
-    // Replace this comment with your implementation
+    // for (auto it = ways_by_id_.begin(); it != ways_by_id_.end(); ++it): {
+
+    // }
     return NO_DISTANCE;
 }
 
-void Datastructures::dfs_search(Coord current, Coord goal, bool start)
+void Datastructures::search_any(Coord current, Coord goal, int route_length)
 {
+    visited_coordinates_.at(current)->minimum_distance = route_length;
+    visited_coordinates_.at(current)->visited = true;
     if (current == goal) {
         route_found_ = true;
-        chosen_route_.push_back({goal,NO_WAY,current_distance_});
-        chosen_route_.push_back({goal,NO_WAY,current_distance_});
+        chosen_route_.push_back({goal,NO_WAY,visited_coordinates_.at(current)->minimum_distance});
         return;
     }
     auto current_ways = ways_from(current);
-    if (!route_found_) {
-        for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
-            if (visited_coordinates_.at(it->second) == true) {
-                continue;
-            }
-            visited_coordinates_.at(it->second) = true;
-            current_distance_ += ways_by_id_.find(it->first)->second->length;
-            dfs_search(it->second, goal, false);
-            current_distance_ -= ways_by_id_.find(it->first)->second->length;
-            if (route_found_) {
-                chosen_route_.push_back({current,it->first,current_distance_});
-                return;
-            }
+    for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
+        if (visited_coordinates_.at(it->second)->visited == true) {
+            continue;
+        }
+        search_any(it->second, goal, route_length + ways_by_id_.at(it->first)->length);
+        if (route_found_) {
+            chosen_route_.push_back({current,it->first,visited_coordinates_.at(current)->minimum_distance});
+            return;
         }
     }
-    if (start == true) {
+    return;
+}
+
+void Datastructures::search_cycle(Coord current, Coord previous)
+{
+    if (visited_coordinates_.at(current)->visited == true) {
+        route_found_ = true;
+        cyclic_route_.push_back({current,NO_WAY});
         return;
     }
-    chosen_route_.pop_back();
+    visited_coordinates_.at(current)->visited = true;
+    auto current_ways = ways_from(current);
+    for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
+        if (it->second == previous) {
+            continue;
+        }
+        search_cycle(it->second, current);
+        if (route_found_) {
+            cyclic_route_.push_back({current,it->first});
+            return;
+        }
+    }
     return;
+}
+
+void Datastructures::clean_for_search()
+{
+    route_found_ = false;
+    for (auto it = visited_coordinates_.begin(); it != visited_coordinates_.end(); ++it) {
+        it->second->minimum_distance = NO_VALUE;
+        it->second->visited = false;
+    }
+    chosen_route_.clear();
+}
+
+std::shared_ptr<Way> Datastructures::get_way(WayID id)
+{
+    auto search_by_id = ways_by_id_.find(id);
+    if (search_by_id == ways_by_id_.end()) {
+        return nullptr;
+    }
+    return search_by_id->second;
 }

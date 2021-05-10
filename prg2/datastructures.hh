@@ -38,6 +38,12 @@ Name const NO_NAME = "!!NO_NAME!!";
 // individual values as PlaceType::SHELTER etc.
 enum class PlaceType { OTHER=0, FIREPIT, SHELTER, PARKING, PEAK, BAY, AREA, NO_TYPE };
 
+// Type for a distance (in metres)
+using Distance = int;
+
+// Return value for cases where Duration is unknown
+Distance const NO_DISTANCE = NO_VALUE;
+
 // Type for a coordinate (x, y)
 struct Coord
 {
@@ -88,7 +94,14 @@ struct Way {
     int length;
 };
 
-
+struct Crossroad_data {
+    Crossroad_data(Coord coordinates):
+        coordinates(coordinates), visited(false), minimum_distance(NO_DISTANCE)
+    {}
+    Coord coordinates;
+    bool visited;
+    int minimum_distance;
+};
 
 // Function used to calculate the euclidean distance
 // Estimate of performance: O(1)
@@ -124,12 +137,6 @@ struct CoordHash
 // Return value for cases where coordinates were not found
 Coord const NO_COORD = {NO_VALUE, NO_VALUE};
 
-// Type for a distance (in metres)
-using Distance = int;
-
-// Return value for cases where Duration is unknown
-Distance const NO_DISTANCE = NO_VALUE;
-
 class Datastructures
 {
 public:
@@ -143,7 +150,6 @@ public:
     // Estimate of performance: O(n) [technically 3*O(n) + O(m), where n is the amount of Places and m is the amount of Areas.
     // Short rationale for estimate: All of the clear() functions are linear
     void clear_all();
-
 
     // Estimate of performance: O(n), linear with the number of elements in places_by_id_
     // Short rationale for estimate: Simply pushes all of the IDs from the unordered map onto a vector
@@ -245,50 +251,61 @@ public:
 
     // Phase 2 operations
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n) in the ways_by_id_ container size
+    // Short rationale for estimate: Simply looping over the container
     std::vector<WayID> all_ways();
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n) in the size of the ways_by_id_ unordered map
+    // Short rationale for estimate: Simply looping over the container
     bool add_way(WayID id, std::vector<Coord> coords);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n), where n is the amount of ways with the coord as either of their ends.
+    // Worst case is equal to container size.
+    // Short rationale for estimate: equal_range is constant in an average case, worth case linear to container size,
+    // and the for-loop is linear to the amount of applicable ways n
     std::vector<std::pair<WayID, Coord>> ways_from(Coord xy);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n), where n is the container size. Average case constant.
+    // Short rationale for estimate: std::find on an unordered map is average case constant,
+    // worst case linear in container size
     std::vector<Coord> get_way_coords(WayID id);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n) [Technically all of the data structures can have different sizes,
+    // so it would be O(n + m...)]
+    // Short rationale for estimate: All of the clear() functions are linear
     void clear_ways();
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore O(n + m) -> O(m)
+    // Short rationale for estimate: Simply looping over the containers as necessary when cleaning
+    // them ready for the search, we traverse without repetition in search_any(), which is a
+    // DFS searching algorithm, therefore O(m)
     std::vector<std::tuple<Coord, WayID, Distance>> route_any(Coord fromxy, Coord toxy);
 
     // Non-compulsory operations
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: O(n), to ways_by_coord_ or ways_by_id_ data structure, technically O(n + m)
+    // Short rationale for estimate: Both the find and equal_range functions are linear to container size
+    // in worst case
     bool remove_way(WayID id);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: -
+    // Short rationale for estimate: -
     std::vector<std::tuple<Coord, WayID, Distance>> route_least_crossroads(Coord fromxy, Coord toxy);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: Clean_for_search() -> O(n), search_any() -> O(m), therefore O(n + m) -> O(m)
+    // Short rationale for estimate: Simply looping over the containers as necessary when cleaning
+    // them ready for the search, we traverse without repetition in search_any(), which is a
+    // DFS searching algorithm, therefore O(m), seemingly this route algorithm is considerably more
+    // expensive than the route_any, so an educated guess would be to say O(m) is considerably
+    // more expensive than O(n) in this case
     std::vector<std::tuple<Coord, WayID>> route_with_cycle(Coord fromxy);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: -
+    // Short rationale for estimate: -
     std::vector<std::tuple<Coord, WayID, Distance>> route_shortest_distance(Coord fromxy, Coord toxy);
 
-    // Estimate of performance:
-    // Short rationale for estimate:
+    // Estimate of performance: -
+    // Short rationale for estimate: -
     Distance trim_ways();
 
 private:
@@ -327,23 +344,37 @@ private:
 
     // PHASE 2
 
+    // Pointers to all Ways are stored by WayID and Coord within these two data structures
     std::unordered_map<WayID, std::shared_ptr<Way>> ways_by_id_;
-
     std::unordered_multimap<Coord, std::shared_ptr<Way>, CoordHash> ways_by_coord_;
 
-    void dfs_search(Coord current, Coord goal, bool start);
+    // Stores data about any given crossroad, with the Coord as a key
+    std::unordered_map<Coord, std::shared_ptr<Crossroad_data>, CoordHash> visited_coordinates_;
 
-    std::shared_ptr<Way> get_way(WayID id);
-
+    // Used to build the returned vectors for the route_any and route_with_cycle functions
     std::vector<std::tuple<Coord, WayID, Distance>> chosen_route_;
-
     std::vector<std::tuple<Coord, WayID>> cyclic_route_;
-
-    std::unordered_map<Coord, bool, CoordHash> visited_coordinates_;
 
     bool route_found_;
 
-    int current_distance_;
+    // Estimate of performance: O(n) to the amount of ways in ways_by_id_
+    // Short rationale for estimate: we traverse without repetition, which is a
+    // DFS searching algorithm, therefore O(n)
+    void search_any(Coord current, Coord goal, int route_length);
+
+    // Estimate of performance: O(n) to the amount of ways in ways_by_id_
+    // Short rationale for estimate: we traverse without repetition (until the single looping node), which is a
+    // DFS searching algorithm, therefore O(n)
+    void search_cycle(Coord current, Coord previous);
+
+    // Estimate of performance: O(n) in the visited_coordinates container size
+    // Short rationale for estimate: Simply loops over the container
+    void clean_for_search();
+
+    // Estimate of performance: O(n), average case is constant
+    // Short rationale for estimate: Up to linear between the searched container: std::find()
+    // Used to see if a way exists within the data structure
+    std::shared_ptr<Way> get_way(WayID id);
 };
 
 #endif // DATASTRUCTURES_HH
