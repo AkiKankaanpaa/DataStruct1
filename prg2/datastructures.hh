@@ -331,7 +331,7 @@ private:
 
     std::unordered_multimap<Coord, std::shared_ptr<Way>, CoordHash> ways_by_coord_;
 
-    void dfs_search(Coord current, Coord goal);
+    void dfs_search(Coord current, Coord goal, bool start);
 
     std::shared_ptr<Way> get_way(WayID id);
 

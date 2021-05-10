@@ -504,6 +504,8 @@ void Datastructures::clear_ways()
 {
     ways_by_id_ = {};
     ways_by_coord_ = {};
+    std::unordered_map<Coord, bool, CoordHash> visited_coordinates_ = {};
+    chosen_route_.clear();
 }
 
 std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_any(Coord fromxy, Coord toxy)
@@ -512,14 +514,16 @@ std::vector<std::tuple<Coord, WayID, Distance> > Datastructures::route_any(Coord
         return {{NO_COORD, NO_WAY, NO_DISTANCE}};
     }
     route_found_ = false;
-    for (auto it = visited_coordinates_.begin(); it != visited_coordinates_.end(); it++) {
+    for (auto it = visited_coordinates_.begin(); it != visited_coordinates_.end(); ++it) {
         it->second = false;
     }
     chosen_route_.clear();
     current_distance_ = 0;
 
-    dfs_search(fromxy, toxy);
+    dfs_search(fromxy, toxy, true);
+    std::reverse(chosen_route_.begin(), chosen_route_.end());
     return chosen_route_;
+
 }
 
 bool Datastructures::remove_way(WayID id)
@@ -552,31 +556,32 @@ Distance Datastructures::trim_ways()
     return NO_DISTANCE;
 }
 
-void Datastructures::dfs_search(Coord current, Coord goal)
+void Datastructures::dfs_search(Coord current, Coord goal, bool start)
 {
     if (current == goal) {
         route_found_ = true;
         chosen_route_.push_back({goal,NO_WAY,current_distance_});
+        chosen_route_.push_back({goal,NO_WAY,current_distance_});
         return;
     }
-
     auto current_ways = ways_from(current);
     if (!route_found_) {
-        qDebug() << "eka if";
         for (auto it = current_ways.begin(); it != current_ways.end(); ++it) {
-            qDebug() << current.x;
             if (visited_coordinates_.at(it->second) == true) {
                 continue;
             }
-            chosen_route_.push_back({current,it->first,current_distance_});
-            current_distance_ += ways_by_id_.find(it->first)->second->length;
             visited_coordinates_.at(it->second) = true;
-            dfs_search(it->second, goal);
+            current_distance_ += ways_by_id_.find(it->first)->second->length;
+            dfs_search(it->second, goal, false);
+            current_distance_ -= ways_by_id_.find(it->first)->second->length;
             if (route_found_) {
+                chosen_route_.push_back({current,it->first,current_distance_});
                 return;
             }
-            current_distance_ -= ways_by_id_.find(it->first)->second->length;
         }
+    }
+    if (start == true) {
+        return;
     }
     chosen_route_.pop_back();
     return;
